@@ -73,18 +73,16 @@ def calc_bdp_pkts(data_rate_str: str, rtt_sec: float, pkt_size: int) -> float:
     bdp_pkts = bdp_bytes / pkt_size
     return bdp_pkts
 
-
-def build_dumbbell_topology(data_rate_str: str, rtt_sec: float):
 def build_dumbbell_topology2(data_rate_str: str, rtt_sec: float):
     """
     Construct a dumbbell topology:
 
              _                                 _
-            |    n1------+        +------n4     |
+            |    n0------+        +------n2     |
             |            |        |             |
-    Senders |    n2------R1------R2-----n5      |    Receivers
-            |            |        |             |
-            |_   n3------+        +------n6    _|
+    Senders |    n1------R0------R1-----n3      |    Receivers
+            |                    
+       
   
 
     Node indices:
@@ -106,12 +104,11 @@ def build_dumbbell_topology2(data_rate_str: str, rtt_sec: float):
     """
     networkTop = '''
     Network Topology:
-             _                                 _
-            |    n1------+        +------n4     |
+              _                                 _
+            |    n0------+        +------n2     |
             |            |        |             |
-    Senders |    n2------R1------R2-----n5      |    Receivers
-            |            |        |             |
-            |_   n3------+        +------n6    _|
+    Senders |    n1------R0------R1-----n3      |    Receivers
+            |                    
     '''
     #print(networkTop)
 
@@ -334,3 +331,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
