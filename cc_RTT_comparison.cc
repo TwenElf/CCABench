@@ -35,8 +35,9 @@ static const double SIM_TIME = 120.0;
 static const double START_TIME = 1.0;
 static const double APP_START = 2.0;
 static const std::string DATA_RATE = "20Mbps";
+static const std::string DATA_RATES[3] = {"50Mbps", "100Mbps", "200Mbps"};
 static const double BUF_FACTOR = 2.0;
-static const double RTT_LIST[3] = {0.002, 0.020, 0.040}; // in seconds
+static const double RTT_LIST[4] = {0.005, 0.010, 0.020, 0.040}; // in seconds
 static const std::string RESULTS_FOLDER = "./results/";
 
 static std::map<uint32_t, bool> firstCwnd;                      //!< First congestion window.
@@ -71,11 +72,13 @@ ApplicationContainer InstallBulk(Ptr<Node> node, Ipv4Address addr, uint16_t port
     return apps;
 }
 
-// static void CwndTracer(std::string context ,uint32_t oldval, uint32_t newval)
-// {
-//     std::cout << "Moving cwnd from " << oldval << " to " << newval << std::endl;
-//     return;
-// }
+static void CwndTracer(Ptr<OutputStreamWrapper> stream, uint32_t oldval, uint32_t newval)
+{
+    *stream->GetStream() << Simulator::Now().GetSeconds()
+                         << "," << newval << std::endl;
+    //std::cout << "Moving cwnd from " << oldval << " to " << newval << std::endl;
+    return;
+}
 
 // /**
 //  * Get the Node Id From Context.
@@ -133,6 +136,23 @@ ApplicationContainer InstallBulk(Ptr<Node> node, Ipv4Address addr, uint16_t port
 //                         "/$ns3::TcpL4Protocol/SocketList/0/CongestionWindow",
 //                     MakeCallback(&CwndTracer));
 // }
+
+void SetupCwndTracing(Ptr<BulkSendApplication> bulk, std::string file_name)
+{
+    AsciiTraceHelper ascii;
+    Ptr<Socket> socket = bulk->GetSocket();
+    if (socket != nullptr)
+    {
+        Ptr<OutputStreamWrapper> stream = ascii.CreateFileStream(file_name);
+        *stream->GetStream() << "time,cwnd" << std::endl;
+        socket->TraceConnectWithoutContext(
+            "CongestionWindow",
+            MakeBoundCallback(&CwndTracer, stream));
+    }
+    else{
+        std::cout << "Error: Socket is null!" << std::endl;
+    }
+}
 
 void
 ThroughputTracer (Ptr<PacketSink> sink, uint64_t &lastTotalRx, Ptr<OutputStreamWrapper> stream)
@@ -192,7 +212,7 @@ Topology BuildDumbbell(std::string rate, double rtt)
     // Divide RTT: to 3 parts on the bottleneck link and 1 part on each side
     double rtt_ptp = rtt/5*3 ;
     double rtt_csma = rtt/5*1;
-    std::cout << "rtt_ptp=" << rtt_ptp*500 << "ms rtt_csma=" << rtt_csma*500 << "ms" << std::endl;
+    //std::cout << "rtt_ptp=" << rtt_ptp*500 << "ms rtt_csma=" << rtt_csma*500 << "ms" << std::endl;
 
     // Non-bottleneck CSMA links
     CsmaHelper csma;
@@ -245,17 +265,19 @@ Topology BuildDumbbell(std::string rate, double rtt)
 //     - all nodes use same CCA (Cubic/Vegas)
 //     - variable: RTT
 // """
-void RunSingleFlow(double rtt, std::string ccaName, std::string ccaType)
+void RunSingleFlow(double rtt, std::string ccaName, std::string ccaType, std::string rate)
 {
+    std::string fileNameStart = RESULTS_FOLDER + "cc_rtt_single_" + ccaName + "_rtt" +
+                            std::to_string(int(rtt * 1000))+ "ms_"+rate;
     // Set system-wide CCA
     Config::SetDefault("ns3::TcpL4Protocol::SocketType",
                        TypeIdValue(TypeId::LookupByName(ccaType)));
 
-    int qpkts = CalcBdpPkts(DATA_RATE, rtt) * BUF_FACTOR;
+    int qpkts = CalcBdpPkts(rate, rtt) * BUF_FACTOR;
     Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize",
                        StringValue(std::to_string(qpkts) + "p"));
 
-    Topology topo = BuildDumbbell(DATA_RATE, rtt);
+    Topology topo = BuildDumbbell(rate, rtt);
 
     Ptr<PacketSink> sink =
         InstallSink(topo.receivers.Get(0), topo.ip_n2, 8080);
@@ -263,33 +285,33 @@ void RunSingleFlow(double rtt, std::string ccaName, std::string ccaType)
     // Track throughput per second
     AsciiTraceHelper ascii;
     Ptr<OutputStreamWrapper> stream =
-                        ascii.CreateFileStream(RESULTS_FOLDER+"single_" + ccaName +
-                        "_rtt" + std::to_string(int(rtt * 1000)) +
-                        "ms_throughput.csv");
+                        ascii.CreateFileStream(fileNameStart + "_throughput.csv");
 
     *stream->GetStream() << "time,throughput_mbps" << std::endl;
 
-    uint64_t lastTotalRx = 0;
-    Simulator::Schedule(Seconds(START_TIME), &ThroughputTracer, sink, std::ref(lastTotalRx),stream);
+    
+    //Simulator::Schedule(Seconds(START_TIME), &ThroughputTracer, sink, std::ref(lastTotalRx),stream);
 
-    InstallBulk(topo.senders.Get(0), topo.ip_n2, 8080);
+    ApplicationContainer apps = InstallBulk(topo.senders.Get(0), topo.ip_n2, 8080);
+    Ptr<BulkSendApplication> bulk = apps.Get(0)->GetObject<BulkSendApplication>();                 
 
     // Ptr<TcpL4Protocol> tcp = topo.senders.Get(0)->GetObject<TcpL4Protocol>();
     // Ptr<Socket> sock = tcp->FindSocket(InetSocketAddress(topo.ip_n2, 8080));
     // Ptr<TcpSocketBase> tcpSock = DynamicCast<TcpSocketBase>(sock);
 
-    // tcpSock->TraceConnectWithoutContext(
+    // socket->TraceConnectWithoutContext(
     //     "CongestionWindow",
     //     MakeCallback(&CwndTracer));
 
 
     // int index = 0;
     // std::string prefix_file_name = "./results/cc_rtt_single_" + ccaName + "_rtt" + std::to_string(int(rtt * 1000)) + "ms";
-    // Simulator::Schedule(Seconds(START_TIME + 0.00001),
-    //                         &TraceCwnd,
-    //                         prefix_file_name + "-cwnd.data",
-    //                         index + 1);
 
+    uint64_t lastTotalRx = 0;
+    Simulator::Schedule(Seconds(APP_START + 0.00001),
+                            &SetupCwndTracing,
+                            bulk, fileNameStart +  "_cwnd.csv");
+    Simulator::Schedule(Seconds(START_TIME), &ThroughputTracer, sink, std::ref(lastTotalRx),stream);
     Simulator::Stop(Seconds(SIM_TIME));
     Simulator::Run();
 
@@ -305,13 +327,19 @@ void RunSingleFlow(double rtt, std::string ccaName, std::string ccaType)
 // -----------------------------------------------------------------------------
 //                             Competing-flows experiment
 // -----------------------------------------------------------------------------
-void RunCompeting(double rtt)
+void RunCompeting(double rtt, std::string rate)
 {
-    int qpkts = CalcBdpPkts(DATA_RATE, rtt) * BUF_FACTOR;
+    static const double SECOND_APP_START = 5.0;
+
+    std::string fileNameStartVegas = RESULTS_FOLDER + "cc_rtt_compete_Vegas_rtt" +
+                            std::to_string(int(rtt * 1000))+ "ms_"+rate;
+    std::string fileNameStartCubic = RESULTS_FOLDER + "cc_rtt_compete_Cubic_rtt" +
+                            std::to_string(int(rtt * 1000))+ "ms_"+rate;
+    int qpkts = CalcBdpPkts(rate, rtt) * BUF_FACTOR;
     Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize",
                        StringValue(std::to_string(qpkts) + "p"));
 
-    Topology topo = BuildDumbbell(DATA_RATE, rtt);
+    Topology topo = BuildDumbbell(rate, rtt);
 
     // Assign CCAs to nodes
     Config::Set("/NodeList/0/$ns3::TcpL4Protocol/SocketType",
@@ -321,14 +349,15 @@ void RunCompeting(double rtt)
 
     Ptr<PacketSink> sink1 =
         InstallSink(topo.receivers.Get(0), topo.ip_n2, 8080);
-    InstallBulk(topo.senders.Get(0), topo.ip_n2, 8080);
-
+    ApplicationContainer apps1 = InstallBulk(topo.senders.Get(0), topo.ip_n2, 8080);
+    Ptr<BulkSendApplication> bulk1 = apps1.Get(0)->GetObject<BulkSendApplication>(); 
 
     Ptr<PacketSink> sink2 =
         InstallSink(topo.receivers.Get(1), topo.ip_n3, 8081);
-    ApplicationContainer bulk2 =
+    ApplicationContainer apps2 =
         InstallBulk(topo.senders.Get(1), topo.ip_n3, 8081);
-    bulk2.Get(0)->SetStartTime(Seconds(5.0)); // starts later
+    apps2.Get(0)->SetStartTime(Seconds(SECOND_APP_START)); // starts later
+    Ptr<BulkSendApplication> bulk2 = apps2.Get(0)->GetObject<BulkSendApplication>(); 
     
     // Track throughput per second for both flows
     uint64_t lastRx2 = 0;
@@ -336,16 +365,12 @@ void RunCompeting(double rtt)
 
     AsciiTraceHelper ascii1;
     Ptr<OutputStreamWrapper> stream1 =
-                    ascii1.CreateFileStream(RESULTS_FOLDER+"compete_Cubic_rtt" + 
-                    std::to_string(int(rtt * 1000)) +
-                    "ms_throughput.csv");
+                    ascii1.CreateFileStream(fileNameStartCubic+"_throughput.csv");
     *stream1->GetStream() << "time,throughput_mbps" << std::endl;
 
     AsciiTraceHelper ascii2;
     Ptr<OutputStreamWrapper> stream2 =
-        ascii2.CreateFileStream(RESULTS_FOLDER+"compete_Vegas_rtt" +
-                                std::to_string(int(rtt * 1000)) +
-                                "ms_throughput.csv");
+        ascii2.CreateFileStream(fileNameStartVegas+"_throughput.csv");
 
     *stream2->GetStream() << "time,throughput_mbps" << std::endl;
 
@@ -356,7 +381,12 @@ void RunCompeting(double rtt)
     Simulator::Schedule(Seconds(START_TIME+0.0001),
                     &ThroughputTracer,
                     sink2, std::ref(lastRx2), stream2);
-
+    Simulator::Schedule(Seconds(APP_START + 0.00001),
+                        &SetupCwndTracing,
+                        bulk1, fileNameStartCubic +  "_cwnd.csv");
+    Simulator::Schedule(Seconds(SECOND_APP_START + 0.00001),
+                        &SetupCwndTracing,
+                        bulk2, fileNameStartVegas +  "_cwnd.csv");
 
     Simulator::Stop(Seconds(SIM_TIME));
     Simulator::Run();
@@ -381,19 +411,22 @@ int main()
     //LogComponentEnable("TcpL4Protocol", LOG_LEVEL_FUNCTION);
     LogComponentEnable("TcpL4Protocol", LOG_LEVEL_WARN);
 
+    for (std::string datarate : DATA_RATES)
+    {        
     std::cout << "=== (A) Single-flow experiments ===\n";
 
-    for (double rtt : RTT_LIST)
-    {
-        RunSingleFlow(rtt, "Cubic", "ns3::TcpCubic");
-        RunSingleFlow(rtt, "Vegas", "ns3::TcpVegas");
+        for (double rtt : RTT_LIST)
+        {
+            RunSingleFlow(rtt, "Cubic", "ns3::TcpCubic",datarate);
+            RunSingleFlow(rtt, "Vegas", "ns3::TcpVegas",datarate);
+        }
+
+
+        std::cout << "\n=== (B) Competition experiments ===\n";
+
+        for (double rtt : RTT_LIST)
+            RunCompeting(rtt,datarate);
     }
-
-
-    std::cout << "\n=== (B) Competition experiments ===\n";
-
-    for (double rtt : RTT_LIST)
-        RunCompeting(rtt);
 
     return 0;
 }
