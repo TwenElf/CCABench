@@ -317,7 +317,8 @@ void RunSingleFlow(double rtt, std::string ccaName, std::string ccaType, std::st
 
     double rx = sink->GetTotalRx();
     double thr = (rx * 8.0) / (SIM_TIME - APP_START) / 1e6;
-    std::cout << "[Single] CCA=" << ccaName
+    std::cout << "[Single] Rate=" << rate
+              << "[Single] CCA=" << ccaName
               << " RTT=" << int(rtt * 1000)
               << "ms Thr=" << thr << " Mbps\n";
 
@@ -396,9 +397,10 @@ void RunCompeting(double rtt, std::string rate)
     double thr1 = (rx1 * 8.0) / (SIM_TIME - APP_START) / 1e6;
     double thr2 = (rx2 * 8.0) / (SIM_TIME - APP_START) / 1e6;
 
-    std::cout << "[Compete] RTT=" << int(rtt * 1000)
-              << "ms  Cubic=" << thr1 << " Mbps"
-              << "  Vegas=" << thr2 << " Mbps\n";
+    std::cout << "[Compete] Rate=" << rate
+          << " RTT=" << int(rtt * 1000) << "ms"
+          << "  Cubic=" << thr1 << " Mbps"
+          << "  Vegas=" << thr2 << " Mbps\n";
 
     Simulator::Destroy();
 }
