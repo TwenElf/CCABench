@@ -73,6 +73,7 @@ def calc_bdp_pkts(data_rate_str: str, rtt_sec: float, pkt_size: int) -> float:
     bdp_pkts = bdp_bytes / pkt_size
     return bdp_pkts
 
+
 def build_dumbbell_topology2(data_rate_str: str, rtt_sec: float):
     """
     Construct a dumbbell topology:

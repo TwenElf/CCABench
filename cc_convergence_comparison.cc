@@ -16,7 +16,7 @@ static const double SIM_TIME = 120.0;
 static const double START_TIME = 1.0;
 static const double APP_START = 2.0;
 static const std::string DATA_RATE = "25Mbps";
-static const double BUF_FACTOR = 2.0;
+static const double BUF_FACTOR = 5.0;
 static const double RTT_LIST[3] = {0.002, 0.020, 0.040}; // in seconds
 static const std::string RESULTS_FOLDER = "./results/";
 
